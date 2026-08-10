@@ -1,0 +1,13 @@
+{
+  "name": "@collab/sync-core",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Headless Yjs experiments proving CRDT convergence under concurrent edits, before wiring up any server or UI",
+  "type": "module",
+  "scripts": {
+    "test:convergence": "node src/convergence-test.js"
+  },
+  "dependencies": {
+    "yjs": "^13.6.32"
+  }
+}
