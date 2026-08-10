@@ -1,0 +1,15 @@
+{
+  "name": "@collab/naive-demo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Phase 1: naive real-time text sync that breaks under concurrent edits — demonstrates the interleaving problem before solving it with CRDTs",
+  "main": "server/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}

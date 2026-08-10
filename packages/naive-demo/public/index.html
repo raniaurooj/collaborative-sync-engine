@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Naive Sync Demo (Phase 1 — Broken)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 700px; margin: 40px auto; }
+    textarea {
+      width: 100%;
+      height: 300px;
+      font-size: 16px;
+      padding: 12px;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+    }
+    .warning { color: #b91c1c; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h2>Phase 1: Naive Real-Time Sync</h2>
+  <p class="warning">⚠️ This is intentionally broken. Open this page in two tabs and type in both at the same time — watch it corrupt.</p>
+  <textarea id="editor" placeholder="Start typing..."></textarea>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const editor = document.getElementById("editor");
+    let isRemoteUpdate = false;
+
+    socket.on("init", (text) => {
+      editor.value = text;
+    });
+
+    socket.on("text-update", (text) => {
+      isRemoteUpdate = true;
+      const cursorPos = editor.selectionStart; // will still jump — that's the point
+      editor.value = text;
+      isRemoteUpdate = false;
+    });
+
+    editor.addEventListener("input", () => {
+      if (isRemoteUpdate) return;
+      socket.emit("text-update", editor.value);
+    });
+  </script>
+</body>
+</html>
