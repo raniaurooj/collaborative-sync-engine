@@ -1,0 +1,10 @@
+{
+  "name": "@collab/client",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Test client for Yjs sync-over-websocket, plain JS before React integration",
+  "type": "module",
+  "dependencies": {
+    "yjs": "^13.6.32"
+  }
+}

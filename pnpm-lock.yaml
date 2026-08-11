@@ -207,6 +207,24 @@ importers:
 
   .: {}
 
+  apps/client:
+    dependencies:
+      yjs:
+        specifier: ^13.6.32
+        version: 13.6.32
+
+  apps/server:
+    dependencies:
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
+      ws:
+        specifier: ^8.21.3
+        version: 8.21.3
+      yjs:
+        specifier: ^13.6.32
+        version: 13.6.32
+
   packages/naive-demo:
     dependencies:
       express:

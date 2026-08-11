@@ -1,0 +1,16 @@
+{
+  "name": "@collab/server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "WebSocket relay server for Yjs document sync — rooms-based, binary update broadcasting",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "ws": "^8.21.3",
+    "yjs": "^13.6.32"
+  }
+}
