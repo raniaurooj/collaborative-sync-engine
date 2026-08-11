@@ -3,29 +3,55 @@ import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import * as Y from "yjs";
 import { URL } from "url";
+import "dotenv/config";
+import { connectDB, loadDocument, saveDocument } from "./persistence.js";
 
 const app = express();
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer });
 
 const rooms = new Map();
+const SAVE_DEBOUNCE_MS = 2000;
 
-function getOrCreateRoom(roomId) {
-  if (!rooms.has(roomId)) {
-    rooms.set(roomId, {
-      doc: new Y.Doc(),
-      clients: new Set(),
-    });
-    console.log(`Room created: ${roomId}`);
+async function getOrCreateRoom(roomId) {
+  if (rooms.has(roomId)) {
+    return rooms.get(roomId);
   }
-  return rooms.get(roomId);
+
+  const doc = new Y.Doc();
+
+  const savedState = await loadDocument(roomId);
+  if (savedState) {
+    Y.applyUpdate(doc, savedState);
+  }
+
+  const room = {
+    doc,
+    clients: new Set(),
+    saveTimeout: null,
+  };
+
+  rooms.set(roomId, room);
+  console.log(`Room ready: ${roomId}`);
+  return room;
 }
 
-wss.on("connection", (ws, req) => {
+function scheduleSave(roomId, room) {
+  if (room.saveTimeout) {
+    clearTimeout(room.saveTimeout);
+  }
+  room.saveTimeout = setTimeout(() => {
+    saveDocument(roomId, room.doc).catch((err) =>
+      console.error(`Failed to save room "${roomId}":`, err.message)
+    );
+  }, SAVE_DEBOUNCE_MS);
+}
+
+wss.on("connection", async (ws, req) => {
   const { searchParams } = new URL(req.url, `http://${req.headers.host}`);
   const roomId = searchParams.get("room") || "default";
 
-  const room = getOrCreateRoom(roomId);
+  const room = await getOrCreateRoom(roomId);
   room.clients.add(ws);
   console.log(`Client joined room "${roomId}" (${room.clients.size} clients now)`);
 
@@ -39,16 +65,12 @@ wss.on("connection", (ws, req) => {
         client.send(data);
       }
     }
+    scheduleSave(roomId, room);
   });
 
   ws.on("close", () => {
     room.clients.delete(ws);
     console.log(`Client left room "${roomId}" (${room.clients.size} clients remain)`);
-
-    if (room.clients.size === 0) {
-      rooms.delete(roomId);
-      console.log(`Room "${roomId}" emptied and removed`);
-    }
   });
 
   ws.on("error", (err) => {
@@ -56,7 +78,15 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-const PORT = 4000;
-httpServer.listen(PORT, () => {
-  console.log(`Sync relay server running on ws://localhost:${PORT}`);
-});
+const PORT = process.env.PORT || 4000;
+
+connectDB(process.env.MONGODB_URI)
+  .then(() => {
+    httpServer.listen(PORT, () => {
+      console.log(`Sync relay server running on ws://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("Failed to connect to MongoDB:", err.message);
+    process.exit(1);
+  });
