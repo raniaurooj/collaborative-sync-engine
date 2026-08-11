@@ -53,6 +53,13 @@
       editor.setSelectionRange(cursorPos, cursorPos);
     });
 
+    doc.on("update", (update, origin) => {
+      if (isApplyingRemoteUpdate) return;
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(update);
+      }
+    });
+
     editor.addEventListener("input", () => {
       if (isApplyingRemoteUpdate) return;
 
@@ -89,10 +96,6 @@
           yText.insert(start, newValue.slice(start, newEnd));
         }
       });
-
-      // Broadcast this change to the server, which relays it to other clients
-      const update = Y.encodeStateAsUpdate(doc);
-      ws.send(update);
     });
   </script>
 </body>
