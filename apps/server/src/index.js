@@ -5,8 +5,18 @@ import * as Y from "yjs";
 import { URL } from "url";
 import "dotenv/config";
 import { connectDB, loadDocument, saveDocument } from "./persistence.js";
+import {issueGuestToken, verifyToken} from "./auth.js"
+import cors from "cors"
 
 const app = express();
+app.use(express.json())
+app.use(cors())
+
+app.get("/auth/guest",(req,res)=>{
+   const {token, userId, name} = issueGuestToken()
+   res.json({token, userId, name})
+})
+
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer });
 
@@ -47,34 +57,87 @@ function scheduleSave(roomId, room) {
   }, SAVE_DEBOUNCE_MS);
 }
 
-wss.on("connection", async (ws, req) => {
-  const { searchParams } = new URL(req.url, `http://${req.headers.host}`);
-  const roomId = searchParams.get("room") || "default";
+wss.on("connection", (ws, req) => {
+  let authenticated = false;
+  let user = null;
+  let room = null;
+  let roomId = null;
 
-  const room = await getOrCreateRoom(roomId);
-  room.clients.add(ws);
-  console.log(`Client joined room "${roomId}" (${room.clients.size} clients now)`);
+  
+  const authTimeout = setTimeout(() => {
+    if (!authenticated) {
+      console.log("Client failed to authenticate in time — closing connection");
+      ws.close(4001, "Authentication timeout");
+    }
+  }, 5000);
 
-  const currentState = Y.encodeStateAsUpdate(room.doc);
-  ws.send(currentState);
+  ws.on("message", async (data, isBinary) => {
+    
+    if (!authenticated) {
+      if (isBinary) {
+        ws.close(4002, "Expected auth message first");
+        return;
+      }
 
-  ws.on("message", (data) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(data.toString());
+      } catch {
+        ws.close(4002, "Invalid auth message format");
+        return;
+      }
+
+      if (parsed.type !== "auth" || !parsed.token) {
+        ws.close(4002, "Expected auth message first");
+        return;
+      }
+
+      const decoded = verifyToken(parsed.token);
+      if (!decoded) {
+        ws.close(4003, "Invalid or expired token");
+        return;
+      }
+      user = decoded;
+      authenticated = true;
+      clearTimeout(authTimeout);
+
+      roomId = parsed.roomId || "default";
+      room = await getOrCreateRoom(roomId);
+      room.clients.add(ws);
+
+      console.log(
+        `Authenticated client "${user.name}" (${user.userId}) joined room "${roomId}" (${room.clients.size} clients now)`
+      );
+
+      const currentState = Y.encodeStateAsUpdate(room.doc);
+      ws.send(currentState);
+
+      return;
+    }
+
     Y.applyUpdate(room.doc, new Uint8Array(data));
+
     for (const client of room.clients) {
       if (client !== ws && client.readyState === client.OPEN) {
         client.send(data);
       }
     }
+
     scheduleSave(roomId, room);
   });
 
   ws.on("close", () => {
-    room.clients.delete(ws);
-    console.log(`Client left room "${roomId}" (${room.clients.size} clients remain)`);
+    clearTimeout(authTimeout);
+    if (room) {
+      room.clients.delete(ws);
+      console.log(
+        `Client "${user?.name}" left room "${roomId}" (${room.clients.size} clients remain)`
+      );
+    }
   });
 
   ws.on("error", (err) => {
-    console.error(`WebSocket error in room "${roomId}":`, err.message);
+    console.error("WebSocket error:", err.message);
   });
 });
 

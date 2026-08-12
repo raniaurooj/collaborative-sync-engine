@@ -28,36 +28,49 @@
     const statusEl = document.getElementById("status");
 
     let isApplyingRemoteUpdate = false;
+    let ws;
 
-    const ws = new WebSocket(`ws://localhost:4000?room=${ROOM_ID}`);
-    ws.binaryType = "arraybuffer";
+    async function connect(){
+      const authRes = await fetch("http://localhost:4000/auth/guest")
+      const { token, name } = await authRes.json()
 
-    ws.onopen = () => {
-      statusEl.textContent = "Connected";
-    };
+      statusEl.textContent = `Authenticating as ${name}`;
+      ws = new WebSocket("ws://localhost:4000")
+      ws.binaryType = "arraybuffer";
 
-    ws.onclose = () => {
-      statusEl.textContent = "Disconnected";
-    };
+      ws.onopen = () => {
+        ws.send(JSON.stringify({type: "auth",token, ROOM_ID}))
+        statusEl.textContent = `Connected as ${name}`;
+      };
 
-    ws.onmessage = (event) => {
-      const update = new Uint8Array(event.data);
-      isApplyingRemoteUpdate = true; 
-      Y.applyUpdate(doc, update);
-      isApplyingRemoteUpdate = false;
-    };
+      ws.onclose = (event) => {
+        statusEl.textContent = `Disconnected (${event.reason} || "Unknown reason")`;
+      };
+
+      ws.onmessage = (event) => {
+        if (typeof event.data === "string") return;
+
+        const update = new Uint8Array(event.data);
+        isApplyingRemoteUpdate = true; 
+        Y.applyUpdate(doc, update);
+        isApplyingRemoteUpdate = false;
+      };
+
+      doc.on("update", (update, origin) => {
+        if (isApplyingRemoteUpdate) return;
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(update);
+        }
+      });
+
+    }
+       
+    connect(); 
 
     yText.observe(() => {
       const cursorPos = editor.selectionStart;
       editor.value = yText.toString();
       editor.setSelectionRange(cursorPos, cursorPos);
-    });
-
-    doc.on("update", (update, origin) => {
-      if (isApplyingRemoteUpdate) return;
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(update);
-      }
     });
 
     editor.addEventListener("input", () => {
