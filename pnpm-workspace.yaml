@@ -1,3 +1,5 @@
 packages:
   - "apps/*"
   - "packages/*"
+allowBuilds:
+  '@enzedonline/quill-blot-formatter2': true

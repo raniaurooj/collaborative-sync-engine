@@ -1,115 +1,12 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Test CRDT Sync</title>
-    <style>
-        textarea {
-      width: 90%;
-      height: 300px;
-      font-size: 16px;
-      padding: 12px;
-    }
-    </style>
-</head>
-<body>
-  <h2>Phase 3: Real CRDT Sync via WebSocket Relay</h2>
-  <p id="status">Connecting...</p>
-  <textarea id="editor" placeholder="Start typing..."></textarea>
-
-  <script type="module">
-    import * as Y from "https://esm.sh/yjs@13.6.18";
-
-    const ROOM_ID = "test-room-1";
-    const doc = new Y.Doc();
-    const yText = doc.getText("shared-text");
-    const editor = document.getElementById("editor");
-    const statusEl = document.getElementById("status");
-
-    let isApplyingRemoteUpdate = false;
-    let ws;
-
-    async function connect(){
-      const authRes = await fetch("http://localhost:4000/auth/guest")
-      const { token, name } = await authRes.json()
-
-      statusEl.textContent = `Authenticating as ${name}`;
-      ws = new WebSocket("ws://localhost:4000")
-      ws.binaryType = "arraybuffer";
-
-      ws.onopen = () => {
-        ws.send(JSON.stringify({type: "auth",token, ROOM_ID}))
-        statusEl.textContent = `Connected as ${name}`;
-      };
-
-      ws.onclose = (event) => {
-        statusEl.textContent = `Disconnected (${event.reason} || "Unknown reason")`;
-      };
-
-      ws.onmessage = (event) => {
-        if (typeof event.data === "string") return;
-
-        const update = new Uint8Array(event.data);
-        isApplyingRemoteUpdate = true; 
-        Y.applyUpdate(doc, update);
-        isApplyingRemoteUpdate = false;
-      };
-
-      doc.on("update", (update, origin) => {
-        if (isApplyingRemoteUpdate) return;
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(update);
-        }
-      });
-
-    }
-       
-    connect(); 
-
-    yText.observe(() => {
-      const cursorPos = editor.selectionStart;
-      editor.value = yText.toString();
-      editor.setSelectionRange(cursorPos, cursorPos);
-    });
-
-    editor.addEventListener("input", () => {
-      if (isApplyingRemoteUpdate) return;
-
-      const newValue = editor.value;
-      const oldValue = yText.toString();
-
-      if (newValue === oldValue) return;
-
-      let start = 0;
-      while (
-        start < oldValue.length &&
-        start < newValue.length &&
-        oldValue[start] === newValue[start]
-      ) {
-        start++;
-      }
-
-      let oldEnd = oldValue.length;
-      let newEnd = newValue.length;
-      while (
-        oldEnd > start &&
-        newEnd > start &&
-        oldValue[oldEnd - 1] === newValue[newEnd - 1]
-      ) {
-        oldEnd--;
-        newEnd--;
-      }
-
-      doc.transact(() => {
-        if (oldEnd > start) {
-          yText.delete(start, oldEnd - start);
-        }
-        if (newEnd > start) {
-          yText.insert(start, newValue.slice(start, newEnd));
-        }
-      });
-    });
-  </script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Collab-sync-engine</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>

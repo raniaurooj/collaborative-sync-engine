@@ -1,5 +1,19 @@
+# Dependencies (matches client/node_modules, server/node_modules, etc.)
 node_modules/
+
+# Build & Output Folders
 dist/
+build/
+out/
+
+# Environment Files
 .env
+.env.*
+!.env.sample
+!.env.example
+
+# Logs & OS System Files
 *.log
+npm-debug.log*
 .DS_Store
+Thumbs.db

@@ -1,10 +1,30 @@
 {
-  "name": "@collab/client",
+  "name": "client",
   "private": true,
-  "version": "1.0.0",
-  "description": "Test client for Yjs sync-over-websocket, plain JS before React integration",
+  "version": "0.0.0",
   "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
   "dependencies": {
+    "@enzedonline/quill-blot-formatter2": "^3.2.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "quill": "^2.0.3",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-easy-crop": "^6.2.3",
+    "tailwindcss": "^4.3.3",
+    "y-quill": "^1.0.0",
     "yjs": "^13.6.32"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "oxlint": "^1.75.0",
+    "vite": "^8.2.0"
   }
 }

@@ -5,17 +5,23 @@ import * as Y from "yjs";
 import { URL } from "url";
 import "dotenv/config";
 import { connectDB, loadDocument, saveDocument } from "./persistence.js";
-import {issueGuestToken, verifyToken} from "./auth.js"
-import cors from "cors"
+import { issueGuestToken, verifyToken } from "./auth.js";
+import cors from "cors";
+import generateUploadSignature, { deleteCloudinaryImage } from "./cloudinary.js";
 
 const app = express();
-app.use(express.json())
-app.use(cors())
+app.use(express.json());
+app.use(cors());
 
-app.get("/auth/guest",(req,res)=>{
-   const {token, userId, name} = issueGuestToken()
-   res.json({token, userId, name})
-})
+app.get("/auth/guest", (req, res) => {
+  const { token, userId, name } = issueGuestToken();
+  res.json({ token, userId, name });
+});
+
+app.get("/upload/signature", (req, res) => {
+  const signatureData = generateUploadSignature();
+  res.json(signatureData);
+});
 
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer });
@@ -57,13 +63,23 @@ function scheduleSave(roomId, room) {
   }, SAVE_DEBOUNCE_MS);
 }
 
+function countImageUrls(yText) {
+  const counts = new Map();
+  for (const op of yText.toDelta()) {
+    if (op.insert && typeof op.insert === "object" && op.insert.image) {
+      const url = op.insert.image;
+      counts.set(url, (counts.get(url) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
 wss.on("connection", (ws, req) => {
   let authenticated = false;
   let user = null;
   let room = null;
   let roomId = null;
 
-  
   const authTimeout = setTimeout(() => {
     if (!authenticated) {
       console.log("Client failed to authenticate in time — closing connection");
@@ -72,7 +88,6 @@ wss.on("connection", (ws, req) => {
   }, 5000);
 
   ws.on("message", async (data, isBinary) => {
-    
     if (!authenticated) {
       if (isBinary) {
         ws.close(4002, "Expected auth message first");
@@ -105,17 +120,26 @@ wss.on("connection", (ws, req) => {
       room = await getOrCreateRoom(roomId);
       room.clients.add(ws);
 
-      console.log(
-        `Authenticated client "${user.name}" (${user.userId}) joined room "${roomId}" (${room.clients.size} clients now)`
-      );
-
       const currentState = Y.encodeStateAsUpdate(room.doc);
       ws.send(currentState);
 
       return;
     }
 
+    const yText = room.doc.getText("quill-content");
+    const before = countImageUrls(yText);
+
     Y.applyUpdate(room.doc, new Uint8Array(data));
+
+    const after = countImageUrls(yText);
+
+    for (const [url] of before) {
+      if (!after.get(url)) {
+        deleteCloudinaryImage(url).catch((err) =>
+          console.error("Cloudinary cleanup failed:", err.message)
+        );
+      }
+    }
 
     for (const client of room.clients) {
       if (client !== ws && client.readyState === client.OPEN) {
@@ -130,9 +154,6 @@ wss.on("connection", (ws, req) => {
     clearTimeout(authTimeout);
     if (room) {
       room.clients.delete(ws);
-      console.log(
-        `Client "${user?.name}" left room "${roomId}" (${room.clients.size} clients remain)`
-      );
     }
   });
 
