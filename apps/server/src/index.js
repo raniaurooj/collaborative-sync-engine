@@ -8,6 +8,7 @@ import { connectDB, loadDocument, saveDocument } from "./persistence.js";
 import { issueGuestToken, verifyToken } from "./auth.js";
 import cors from "cors";
 import generateUploadSignature, { deleteCloudinaryImage } from "./cloudinary.js";
+import { signup, login, requireAuth } from "./auth.js";
 
 const app = express();
 app.use(express.json());
@@ -16,6 +17,29 @@ app.use(cors());
 app.get("/auth/guest", (req, res) => {
   const { token, userId, name } = issueGuestToken();
   res.json({ token, userId, name });
+});
+
+app.post("/auth/signup", async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: "email, password, and name are required" });
+    }
+    const { token, user } = await signup({ email, password, name });
+    res.status(201).json({ token, user: { id: user._id, email: user.email, name: user.name } });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.post("/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const { token, user } = await login({ email, password });
+    res.json({ token, user: { id: user._id, email: user.email, name: user.name } });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
 });
 
 app.get("/upload/signature", (req, res) => {
