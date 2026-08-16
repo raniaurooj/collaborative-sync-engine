@@ -9,6 +9,9 @@ import { issueGuestToken, verifyToken } from "./auth.js";
 import cors from "cors";
 import generateUploadSignature, { deleteCloudinaryImage } from "./cloudinary.js";
 import { signup, login, requireAuth } from "./auth.js";
+import documentsRouter from "./routes/documents.route.js";
+import mongoose from "mongoose";
+import Document from "./model/Document.model.js";
 
 const app = express();
 app.use(express.json());
@@ -46,6 +49,8 @@ app.get("/upload/signature", (req, res) => {
   const signatureData = generateUploadSignature();
   res.json(signatureData);
 });
+
+app.use("/documents", documentsRouter);
 
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer });
@@ -103,6 +108,7 @@ wss.on("connection", (ws, req) => {
   let user = null;
   let room = null;
   let roomId = null;
+  let connectionRole = null;
 
   const authTimeout = setTimeout(() => {
     if (!authenticated) {
@@ -142,12 +148,35 @@ wss.on("connection", (ws, req) => {
 
       roomId = parsed.roomId || "default";
       room = await getOrCreateRoom(roomId);
+      let role = "editor"
+      if(roomId !== "default"){
+        if (!mongoose.isValidObjectId(roomId)) {
+          ws.close(4004, "Invalid document id");
+          return;
+        }
+        const docRecord = await Document.findById(roomId);
+        if (!docRecord) {
+          ws.close(4004, "Document not found");
+          return;
+        }
+        role = docRecord.roleFor(user.sub);
+        if (!role) {
+          ws.close(4004, "You do not have access to this document");
+          return;
+        }
+      }
+
+      connectionRole = role;
+      room = await getOrCreateRoom(roomId)
       room.clients.add(ws);
 
       const currentState = Y.encodeStateAsUpdate(room.doc);
       ws.send(currentState);
-
       return;
+    }
+
+    if (connectionRole !== "editor") {
+      return; // viewer -> read-only, drop any attempted write
     }
 
     const yText = room.doc.getText("quill-content");

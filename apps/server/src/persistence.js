@@ -1,19 +1,16 @@
-import { MongoClient } from 'mongodb';
-import * as Y from 'yjs';
-
-let client;
-let db;
+import mongoose from "mongoose";
+import * as Y from "yjs";
 
 export async function connectDB(uri) {
-  client = new MongoClient(uri);
-  await client.connect();
-  db = client.db("collab-sync-engine");
+  await mongoose.connect(uri, { dbName: "collab-sync-engine" });
   console.log("Connected to MongoDB Atlas!");
 }
 
 function getCollection() {
-  if (!db) throw new Error("Database not initialized. Call connectDB first.");
-  return db.collection("document");
+  if (mongoose.connection.readyState !== 1) {
+    throw new Error("Database not initialized. Call connectDB first.");
+  }
+  return mongoose.connection.db.collection("document");
 }
 
 async function loadDocument(roomId) {
@@ -36,17 +33,11 @@ async function saveDocument(roomId, doc) {
       $set: {
         roomId,
         state: Buffer.from(state),
-        updatedAt: new Date(), 
+        updatedAt: new Date(),
       },
     },
-    {
-      upsert: true, 
-    }
+    { upsert: true }
   );
 }
 
-export {
-  getCollection,
-  loadDocument,
-  saveDocument,
-};
+export { getCollection, loadDocument, saveDocument };

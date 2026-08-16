@@ -1,15 +1,15 @@
 import jwt from "jsonwebtoken"
-import { User } from "./model/User.model.js"
+import User from "./model/User.model.js"
 
 const JWT_SECRET = process.env.JWT_SECRET
-const TOKEN_EXPIRY = process.env.TOKEN_EXPIRY
+const JWT_EXPIRY = process.env.JWT_EXPIRY
 
 export function issueGuestToken(){
     const userId = "guest-"+ Math.random().toString(36).slice(2,10)
     const name = "Guest-" + Math.floor(Math.random()*1000)
 
     const token = jwt.sign({userId,name},JWT_SECRET,{
-        expiresIn: TOKEN_EXPIRY
+        expiresIn: JWT_EXPIRY
     })
 
     return {token, userId, name}
