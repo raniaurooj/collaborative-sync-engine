@@ -13,10 +13,12 @@
     "@enzedonline/quill-blot-formatter2": "^3.2.0",
     "@tailwindcss/vite": "^4.3.3",
     "quill": "^2.0.3",
+    "quill-cursors": "^5.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-easy-crop": "^6.2.3",
     "tailwindcss": "^4.3.3",
+    "y-protocols": "^1.0.7",
     "y-quill": "^1.0.0",
     "yjs": "^13.6.32"
   },

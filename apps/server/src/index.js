@@ -2,16 +2,17 @@ import express from "express";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import * as Y from "yjs";
-import { URL } from "url";
+import mongoose from "mongoose";
 import "dotenv/config";
 import { connectDB, loadDocument, saveDocument } from "./persistence.js";
 import { issueGuestToken, verifyToken } from "./auth.js";
 import cors from "cors";
 import generateUploadSignature, { deleteCloudinaryImage } from "./cloudinary.js";
-import { signup, login, requireAuth } from "./auth.js";
 import documentsRouter from "./routes/documents.route.js";
-import mongoose from "mongoose";
 import Document from "./model/Document.model.js";
+
+const MSG_DOC = 0;
+const MSG_AWARENESS = 1;
 
 const app = express();
 app.use(express.json());
@@ -20,29 +21,6 @@ app.use(cors());
 app.get("/auth/guest", (req, res) => {
   const { token, userId, name } = issueGuestToken();
   res.json({ token, userId, name });
-});
-
-app.post("/auth/signup", async (req, res) => {
-  try {
-    const { email, password, name } = req.body;
-    if (!email || !password || !name) {
-      return res.status(400).json({ error: "email, password, and name are required" });
-    }
-    const { token, user } = await signup({ email, password, name });
-    res.status(201).json({ token, user: { id: user._id, email: user.email, name: user.name } });
-  } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
-  }
-});
-
-app.post("/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const { token, user } = await login({ email, password });
-    res.json({ token, user: { id: user._id, email: user.email, name: user.name } });
-  } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
-  }
 });
 
 app.get("/upload/signature", (req, res) => {
@@ -92,6 +70,7 @@ function scheduleSave(roomId, room) {
   }, SAVE_DEBOUNCE_MS);
 }
 
+
 function countImageUrls(yText) {
   const counts = new Map();
   for (const op of yText.toDelta()) {
@@ -108,7 +87,7 @@ wss.on("connection", (ws, req) => {
   let user = null;
   let room = null;
   let roomId = null;
-  let connectionRole = null;
+  let connectionRole = null; // "editor" | "viewer" | null
 
   const authTimeout = setTimeout(() => {
     if (!authenticated) {
@@ -147,9 +126,9 @@ wss.on("connection", (ws, req) => {
       clearTimeout(authTimeout);
 
       roomId = parsed.roomId || "default";
-      room = await getOrCreateRoom(roomId);
-      let role = "editor"
-      if(roomId !== "default"){
+
+      let role = "editor"; // "default" stays an open demo room, unchanged behavior
+      if (roomId !== "default") {
         if (!mongoose.isValidObjectId(roomId)) {
           ws.close(4004, "Invalid document id");
           return;
@@ -165,24 +144,45 @@ wss.on("connection", (ws, req) => {
           return;
         }
       }
-
       connectionRole = role;
-      room = await getOrCreateRoom(roomId)
+
+      room = await getOrCreateRoom(roomId);
       room.clients.add(ws);
 
       const currentState = Y.encodeStateAsUpdate(room.doc);
-      ws.send(currentState);
+      const framed = new Uint8Array(currentState.length + 1);
+      framed[0] = MSG_DOC;
+      framed.set(currentState, 1);
+      ws.send(framed);
+
       return;
     }
 
+    if (!room) return;
+    
+    const bytes = new Uint8Array(data);
+    const msgType = bytes[0];
+    const payload = bytes.subarray(1);
+
+    if (msgType === MSG_AWARENESS) {
+      for (const client of room.clients) {
+        if (client !== ws && client.readyState === client.OPEN) {
+          client.send(data);
+        }
+      }
+      return;
+    }
+
+    if (msgType !== MSG_DOC) return;
+
     if (connectionRole !== "editor") {
-      return; // viewer -> read-only, drop any attempted write
+      return; 
     }
 
     const yText = room.doc.getText("quill-content");
     const before = countImageUrls(yText);
 
-    Y.applyUpdate(room.doc, new Uint8Array(data));
+    Y.applyUpdate(room.doc, payload);
 
     const after = countImageUrls(yText);
 

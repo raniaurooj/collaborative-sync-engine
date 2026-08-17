@@ -7,7 +7,9 @@ import { YjsWebsocketProvider } from "./YjsWebsocketProvider";
 import ImageCropModal from "./ImageCropModal";
 import BlotFormatter from "@enzedonline/quill-blot-formatter2";
 import "@enzedonline/quill-blot-formatter2/dist/css/quill-blot-formatter2.css";
+import QuillCursors from "quill-cursors";
 
+Quill.register("modules/cursors", QuillCursors);
 Quill.register("modules/blotFormatter2", BlotFormatter);
 
 const TOOLBAR_OPTIONS = [
@@ -56,7 +58,7 @@ async function uploadImageToCloudinary(file) {
   return data.secure_url;
 }
 
-export default function Editor({ roomId = "test-room-1" }) {
+export default function Editor({ roomId = "default" }) {
   const editorContainerRef = useRef(null);
   const [status, setStatus] = useState("connecting...");
   const [uploadStatus, setUploadStatus] = useState(null);
@@ -122,16 +124,17 @@ export default function Editor({ roomId = "test-room-1" }) {
             },
           },
         },
-         blotFormatter2: {},
+        blotFormatter2: {},
+        cursors: true,
       },
     });
 
     const toolbarEl = quill.getModule("toolbar").container;
     
-    const binding = new QuillBinding(yText, quill);
-
     const provider = new YjsWebsocketProvider(doc, roomId);
     provider.onStatusChange = (s) => setStatus(s);
+
+    const binding = new QuillBinding(yText, quill, provider.awareness);
     provider.connect();
 
     return () => {
