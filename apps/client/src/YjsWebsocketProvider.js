@@ -1,14 +1,27 @@
 import * as Y from "yjs";
-import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from "y-protocols/awareness";
+import {
+  Awareness,
+  encodeAwarenessUpdate,
+  applyAwarenessUpdate,
+} from "y-protocols/awareness";
 
 const MSG_DOC = 0;
 const MSG_AWARENESS = 1;
+
+const MAX_RECONNECT_DELAY = 15000;
+const BASE_RECONNECT_DELAY = 500;
 
 function withType(type, bytes) {
   const buf = new Uint8Array(bytes.length + 1);
   buf[0] = type;
   buf.set(bytes, 1);
   return buf;
+}
+
+function toBase64(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
 }
 
 function randomColor(seed) {
@@ -29,32 +42,53 @@ export class YjsWebsocketProvider {
 
     this.awareness = new Awareness(doc);
 
+    this.reconnectAttempt = 0;
+    this.reconnectTimer = null;
+    this.intentionalClose = false;
+
     this._handleLocalUpdate = this._handleLocalUpdate.bind(this);
     this._handleAwarenessUpdate = this._handleAwarenessUpdate.bind(this);
   }
 
   async connect() {
+    this.intentionalClose = false;
+    await this._openSocket();
+    this.doc.on("update", this._handleLocalUpdate);
+    this.awareness.on("update", this._handleAwarenessUpdate);
+  }
+
+  async _openSocket() {
     const authRes = await fetch(`${this._httpBase()}/auth/guest`);
     const { token, name } = await authRes.json();
 
-    this._setStatus(`authenticating as ${name}`);
+    this._setStatus(
+      this.reconnectAttempt > 0 ? `reconnecting as ${name}...` : `authenticating as ${name}`
+    );
     this.userName = name;
 
     this.ws = new WebSocket(this.serverUrl);
     this.ws.binaryType = "arraybuffer";
+    this._receivedInitialSync = false;
 
     this.ws.onopen = () => {
-      this.ws.send(JSON.stringify({ type: "auth", token, roomId: this.roomId }));
+      const stateVector = Y.encodeStateVector(this.doc);
+      this.ws.send(
+        JSON.stringify({
+          type: "auth",
+          token,
+          roomId: this.roomId,
+          stateVector: toBase64(stateVector),
+        })
+      );
       this._setStatus(`connected as ${name}`);
+      this.reconnectAttempt = 0;
 
-      this.awareness.setLocalStateField("user", {
-        name,
-        color: randomColor(name),
-      });
+      this.awareness.setLocalStateField("user", { name, color: randomColor(name) });
     };
 
     this.ws.onclose = (event) => {
       this._setStatus(`disconnected (${event.reason || "unknown"})`);
+      if (!this.intentionalClose) this._scheduleReconnect();
     };
 
     this.ws.onerror = () => {
@@ -72,13 +106,37 @@ export class YjsWebsocketProvider {
         this.isApplyingRemoteUpdate = true;
         Y.applyUpdate(this.doc, payload);
         this.isApplyingRemoteUpdate = false;
+
+        if (!this._receivedInitialSync) {
+          this._receivedInitialSync = true;
+          const localState = Y.encodeStateAsUpdate(this.doc);
+          this.ws.send(withType(MSG_DOC, localState));
+        }
       } else if (type === MSG_AWARENESS) {
         applyAwarenessUpdate(this.awareness, payload, this);
       }
+          
     };
+  }
 
-    this.doc.on("update", this._handleLocalUpdate);
-    this.awareness.on("update", this._handleAwarenessUpdate);
+  _scheduleReconnect() {
+    if (this.reconnectTimer) return;
+
+    const delay = Math.min(
+      BASE_RECONNECT_DELAY * 2 ** this.reconnectAttempt,
+      MAX_RECONNECT_DELAY
+    );
+    const jitter = delay * 0.2 * Math.random();
+    this.reconnectAttempt += 1;
+
+    this._setStatus(`reconnecting in ${Math.round((delay + jitter) / 1000)}s...`);
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this._openSocket().catch(() => {
+        this._scheduleReconnect();
+      });
+    }, delay + jitter);
   }
 
   _handleLocalUpdate(update) {
@@ -105,8 +163,15 @@ export class YjsWebsocketProvider {
   }
 
   destroy() {
+    this.intentionalClose = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     this.doc.off("update", this._handleLocalUpdate);
     this.awareness.off("update", this._handleAwarenessUpdate);
+
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const update = encodeAwarenessUpdate(this.awareness, [this.doc.clientID], new Map());
       this.ws.send(withType(MSG_AWARENESS, update));

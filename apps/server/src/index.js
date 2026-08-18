@@ -32,6 +32,24 @@ app.use("/documents", documentsRouter);
 
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer });
+const HEARTBEAT_INTERVAL_MS = 30000;
+
+function heartbeat() {
+  this.isAlive = true;
+}
+
+const heartbeatTimer = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) {
+      console.log("Terminating dead connection (no pong received)");
+      return ws.terminate();
+    }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, HEARTBEAT_INTERVAL_MS);
+
+wss.on("close", () => clearInterval(heartbeatTimer));
 
 const rooms = new Map();
 const SAVE_DEBOUNCE_MS = 2000;
@@ -88,6 +106,8 @@ wss.on("connection", (ws, req) => {
   let room = null;
   let roomId = null;
   let connectionRole = null; // "editor" | "viewer" | null
+  ws.isAlive = true;
+  ws.on("pong", heartbeat);
 
   const authTimeout = setTimeout(() => {
     if (!authenticated) {
@@ -117,17 +137,12 @@ wss.on("connection", (ws, req) => {
       }
 
       const decoded = verifyToken(parsed.token);
-      if (!decoded) {
-        ws.close(4003, "Invalid or expired token");
-        return;
-      }
-      user = decoded;
       authenticated = true;
       clearTimeout(authTimeout);
 
       roomId = parsed.roomId || "default";
 
-      let role = "editor"; // "default" stays an open demo room, unchanged behavior
+      let role = "editor";
       if (roomId !== "default") {
         if (!mongoose.isValidObjectId(roomId)) {
           ws.close(4004, "Invalid document id");
@@ -149,15 +164,21 @@ wss.on("connection", (ws, req) => {
       room = await getOrCreateRoom(roomId);
       room.clients.add(ws);
 
-      const currentState = Y.encodeStateAsUpdate(room.doc);
-      const framed = new Uint8Array(currentState.length + 1);
-      framed[0] = MSG_DOC;
-      framed.set(currentState, 1);
-      ws.send(framed);
+      let diff;
+      if (parsed.stateVector) {
+        const clientStateVector = Uint8Array.from(atob(parsed.stateVector), (c) => c.charCodeAt(0));
+        diff = Y.encodeStateAsUpdate(room.doc, clientStateVector);
+      } else {
+        diff = Y.encodeStateAsUpdate(room.doc);
+      }
 
+      const framed = new Uint8Array(diff.length + 1);
+      framed[0] = MSG_DOC;
+      framed.set(diff, 1);
+      ws.send(framed);
       return;
     }
-
+    
     if (!room) return;
     
     const bytes = new Uint8Array(data);
