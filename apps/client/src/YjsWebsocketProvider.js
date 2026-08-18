@@ -7,7 +7,7 @@ import {
 
 const MSG_DOC = 0;
 const MSG_AWARENESS = 1;
-
+const MSG_STATE_VECTOR = 2;
 const MAX_RECONNECT_DELAY = 15000;
 const BASE_RECONNECT_DELAY = 500;
 
@@ -68,7 +68,6 @@ export class YjsWebsocketProvider {
 
     this.ws = new WebSocket(this.serverUrl);
     this.ws.binaryType = "arraybuffer";
-    this._receivedInitialSync = false;
 
     this.ws.onopen = () => {
       const stateVector = Y.encodeStateVector(this.doc);
@@ -106,16 +105,14 @@ export class YjsWebsocketProvider {
         this.isApplyingRemoteUpdate = true;
         Y.applyUpdate(this.doc, payload);
         this.isApplyingRemoteUpdate = false;
-
-        if (!this._receivedInitialSync) {
-          this._receivedInitialSync = true;
-          const localState = Y.encodeStateAsUpdate(this.doc);
-          this.ws.send(withType(MSG_DOC, localState));
-        }
       } else if (type === MSG_AWARENESS) {
         applyAwarenessUpdate(this.awareness, payload, this);
+      } else if (type === MSG_STATE_VECTOR) {
+        const diff = Y.encodeStateAsUpdate(this.doc, payload);
+        if (diff.length > 2) { // trivial empty-diff guard, avoid a no-op send
+          this.ws.send(withType(MSG_DOC, diff));
+        }
       }
-          
     };
   }
 

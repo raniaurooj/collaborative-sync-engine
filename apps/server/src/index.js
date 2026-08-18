@@ -13,6 +13,7 @@ import Document from "./model/Document.model.js";
 
 const MSG_DOC = 0;
 const MSG_AWARENESS = 1;
+const MSG_STATE_VECTOR = 2;
 
 const app = express();
 app.use(express.json());
@@ -52,29 +53,35 @@ const heartbeatTimer = setInterval(() => {
 wss.on("close", () => clearInterval(heartbeatTimer));
 
 const rooms = new Map();
+const roomCreationPromises = new Map();
 const SAVE_DEBOUNCE_MS = 2000;
 
 async function getOrCreateRoom(roomId) {
   if (rooms.has(roomId)) {
     return rooms.get(roomId);
   }
-
-  const doc = new Y.Doc();
-
-  const savedState = await loadDocument(roomId);
-  if (savedState) {
-    Y.applyUpdate(doc, savedState);
+  if (roomCreationPromises.has(roomId)) {
+    return roomCreationPromises.get(roomId);
   }
 
-  const room = {
-    doc,
-    clients: new Set(),
-    saveTimeout: null,
-  };
+  const creationPromise = (async () => {
+    const doc = new Y.Doc();
+    const savedState = await loadDocument(roomId);
+    if (savedState) {
+      Y.applyUpdate(doc, savedState);
+    }
+    const room = { doc, clients: new Set(), saveTimeout: null };
+    rooms.set(roomId, room);
+    console.log(`Room ready: ${roomId}`);
+    return room;
+  })();
 
-  rooms.set(roomId, room);
-  console.log(`Room ready: ${roomId}`);
-  return room;
+  roomCreationPromises.set(roomId, creationPromise);
+  try {
+    return await creationPromise;
+  } finally {
+    roomCreationPromises.delete(roomId);
+  }
 }
 
 function scheduleSave(roomId, room) {
@@ -176,6 +183,12 @@ wss.on("connection", (ws, req) => {
       framed[0] = MSG_DOC;
       framed.set(diff, 1);
       ws.send(framed);
+
+      const serverStateVector = Y.encodeStateVector(room.doc);
+      const svFramed = new Uint8Array(serverStateVector.length + 1);
+      svFramed[0] = MSG_STATE_VECTOR;
+      svFramed.set(serverStateVector, 1);
+      ws.send(svFramed);
       return;
     }
     
