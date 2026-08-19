@@ -17,6 +17,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-easy-crop": "^6.2.3",
+    "react-router-dom": "^7.18.2",
     "tailwindcss": "^4.3.3",
     "y-protocols": "^1.0.7",
     "y-quill": "^1.0.0",

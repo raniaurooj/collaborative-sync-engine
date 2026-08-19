@@ -150,7 +150,10 @@ wss.on("connection", (ws, req) => {
       roomId = parsed.roomId || "default";
 
       let role = "editor";
-      if (roomId !== "default") {
+
+      const isOpenRoom = roomId === "default" || roomId.startsWith("guest-");
+
+      if (!isOpenRoom) {
         if (!mongoose.isValidObjectId(roomId)) {
           ws.close(4004, "Invalid document id");
           return;

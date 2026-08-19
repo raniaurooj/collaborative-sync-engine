@@ -6,7 +6,7 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "dev": "node src/index.js"
+    "dev": "nodemon src/index.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -18,5 +18,8 @@
     "mongoose": "^9.9.2",
     "ws": "^8.21.3",
     "yjs": "^13.6.32"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }
