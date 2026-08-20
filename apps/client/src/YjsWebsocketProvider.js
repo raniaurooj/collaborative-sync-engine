@@ -4,12 +4,14 @@ import {
   encodeAwarenessUpdate,
   applyAwarenessUpdate,
 } from "y-protocols/awareness";
+import { getToken } from "./lib/auth";
 
 const MSG_DOC = 0;
 const MSG_AWARENESS = 1;
 const MSG_STATE_VECTOR = 2;
 const MAX_RECONNECT_DELAY = 15000;
 const BASE_RECONNECT_DELAY = 500;
+const MSG_ROLE = 3;
 
 function withType(type, bytes) {
   const buf = new Uint8Array(bytes.length + 1);
@@ -58,9 +60,19 @@ export class YjsWebsocketProvider {
   }
 
   async _openSocket() {
-    const authRes = await fetch(`${this._httpBase()}/auth/guest`);
-    const { token, name } = await authRes.json();
+    const realToken = getToken();
+    let token, name;
 
+     if (realToken) {
+        token = realToken;
+        name = "you"; 
+      } else {
+        const authRes = await fetch(`${this._httpBase()}/auth/guest`);
+        const guestData = await authRes.json();
+        token = guestData.token;
+        name = guestData.name;
+      }
+      
     this._setStatus(
       this.reconnectAttempt > 0 ? `reconnecting as ${name}...` : `authenticating as ${name}`
     );
@@ -112,6 +124,11 @@ export class YjsWebsocketProvider {
         if (diff.length > 2) { // trivial empty-diff guard, avoid a no-op send
           this.ws.send(withType(MSG_DOC, diff));
         }
+      } else if (type === MSG_ROLE) {
+        const role = new TextDecoder().decode(payload);
+        console.log("ROLE RECEIVED:", role);
+        this.role = role;
+        if (this.onRoleChange) this.onRoleChange(role);
       }
     };
   }

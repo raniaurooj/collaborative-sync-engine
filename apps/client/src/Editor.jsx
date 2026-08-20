@@ -8,6 +8,7 @@ import ImageCropModal from "./ImageCropModal";
 import BlotFormatter from "@enzedonline/quill-blot-formatter2";
 import "@enzedonline/quill-blot-formatter2/dist/css/quill-blot-formatter2.css";
 import QuillCursors from "quill-cursors";
+import { getToken } from "./lib/auth";
 
 Quill.register("modules/cursors", QuillCursors);
 Quill.register("modules/blotFormatter2", BlotFormatter);
@@ -64,6 +65,10 @@ export default function Editor({ roomId = "default" }) {
   const [uploadStatus, setUploadStatus] = useState(null);
   const [cropSrc, setCropSrc] = useState(null);
   const pendingInsertRef = useRef(null);
+  const [title, setTitle] = useState(null);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const isRealDoc = !roomId.startsWith("guest-") && roomId !== "default";
 
   function openCropForFile(file, quill, range) {
     const objectUrl = URL.createObjectURL(file);
@@ -133,7 +138,9 @@ export default function Editor({ roomId = "default" }) {
     
     const provider = new YjsWebsocketProvider(doc, roomId);
     provider.onStatusChange = (s) => setStatus(s);
-
+    provider.onRoleChange = (role) => {
+      quill.enable(role === "editor");
+    };
     const binding = new QuillBinding(yText, quill, provider.awareness);
     provider.connect();
 
@@ -148,15 +155,71 @@ export default function Editor({ roomId = "default" }) {
     };
   }, [roomId]);
 
+  useEffect(() => {
+    if (!isRealDoc) return;
+    fetch(`http://localhost:4000/documents/${roomId}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((res) => res.json())
+      .then((data) => setTitle(data.title))
+      .catch(() => setTitle("Untitled"));
+  }, [roomId, isRealDoc]);
+
+  async function handleTitleSave() {
+    const trimmed = titleDraft.trim();
+    setEditingTitle(false);
+    if (!trimmed || trimmed === title) return;
+
+    try {
+      const res = await fetch(`http://localhost:4000/documents/${roomId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ title: trimmed }),
+      });
+      const data = await res.json();
+      if (res.ok) setTitle(data.title);
+    } catch {
+
+    }
+  }
+
   const isConnected = status.startsWith("connected");
 
   return (
     <div className="min-h-screen bg-white px-4 py-6 sm:px-6 sm:py-10">
       <div className="mx-auto w-full max-w-3xl">
         <div className="mb-4 flex flex-col gap-2 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-lg font-semibold sm:text-xl">
-            Collaborative Sync Engine
-          </h1>
+          {isRealDoc ? (
+            editingTitle ? (
+              <input
+                autoFocus
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={handleTitleSave}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleTitleSave();
+                  if (e.key === "Escape") setEditingTitle(false);
+                }}
+                className="rounded border border-stone-300 bg-white px-2 py-1 text-lg font-semibold outline-none focus:border-stone-500"
+              />
+            ) : (
+              <h1
+                onClick={() => {
+                  setTitleDraft(title || "");
+                  setEditingTitle(true);
+                }}
+                className="cursor-text text-lg font-semibold hover:underline sm:text-xl"
+                title="Click to rename"
+              >
+                {title || "Loading..."}
+              </h1>
+            )
+          ) : (
+            <h1 className="text-lg font-semibold sm:text-xl">Untitled Session</h1>
+          )}
 
           <div className="flex items-center gap-3 self-start">
             {uploadStatus === "uploading" && (

@@ -5,7 +5,7 @@ import * as Y from "yjs";
 import mongoose from "mongoose";
 import "dotenv/config";
 import { connectDB, loadDocument, saveDocument } from "./persistence.js";
-import { issueGuestToken, verifyToken } from "./auth.js";
+import { issueGuestToken, verifyToken , signup, login, requireAuth } from "./auth.js";
 import cors from "cors";
 import generateUploadSignature, { deleteCloudinaryImage } from "./cloudinary.js";
 import documentsRouter from "./routes/documents.route.js";
@@ -14,6 +14,7 @@ import Document from "./model/Document.model.js";
 const MSG_DOC = 0;
 const MSG_AWARENESS = 1;
 const MSG_STATE_VECTOR = 2;
+const MSG_ROLE = 3;
 
 const app = express();
 app.use(express.json());
@@ -27,6 +28,29 @@ app.get("/auth/guest", (req, res) => {
 app.get("/upload/signature", (req, res) => {
   const signatureData = generateUploadSignature();
   res.json(signatureData);
+});
+
+app.post("/auth/signup", async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: "email, password, and name are required" });
+    }
+    const { token, user } = await signup({ email, password, name });
+    res.status(201).json({ token, user: { id: user._id, email: user.email, name: user.name } });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.post("/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const { token, user } = await login({ email, password });
+    res.json({ token, user: { id: user._id, email: user.email, name: user.name } });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
 });
 
 app.use("/documents", documentsRouter);
@@ -144,6 +168,12 @@ wss.on("connection", (ws, req) => {
       }
 
       const decoded = verifyToken(parsed.token);
+      if (!decoded) {
+        ws.close(4003, "Invalid or expired token");
+        return;
+      }
+
+      user = decoded;
       authenticated = true;
       clearTimeout(authTimeout);
 
@@ -169,6 +199,7 @@ wss.on("connection", (ws, req) => {
           return;
         }
       }
+      console.log("ROLE COMPUTED for", user.sub, "on doc", roomId, "=", role);
       connectionRole = role;
 
       room = await getOrCreateRoom(roomId);
@@ -192,6 +223,12 @@ wss.on("connection", (ws, req) => {
       svFramed[0] = MSG_STATE_VECTOR;
       svFramed.set(serverStateVector, 1);
       ws.send(svFramed);
+
+      const roleBytes = new TextEncoder().encode(role);
+      const roleFramed = new Uint8Array(roleBytes.length + 1);
+      roleFramed[0] = MSG_ROLE;
+      roleFramed.set(roleBytes, 1);
+      ws.send(roleFramed);
       return;
     }
     

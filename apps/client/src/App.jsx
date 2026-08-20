@@ -3,6 +3,8 @@ import Editor from "./Editor.jsx"
 import HomePage from "./HomePage.jsx"
 import { diffUpdateV2 } from "yjs"
 import { useParams } from "react-router-dom";
+import AuthPage from "./AuthPage.jsx";
+import DashboardPage from "./DashboardPage.jsx";
 
 function App() {
 
@@ -21,7 +23,8 @@ function App() {
          <Route path="/" element={<HomePage/>} />
          <Route path="/write" element={<StartGuestWriting />}/>
          <Route path="/write/:roomId" element={<EditorRoute/>}/>
-         <Route path="/login" element={<div>Login Page - comming next</div>} />
+         <Route path="/login" element={<AuthPage />} />
+         <Route path="/dashboard" element={<DashboardPage />} />
       </Routes>
     </>
   )

@@ -41,6 +41,62 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.patch("/:id", async (req, res) => {
+  try {
+    const { title } = req.body;
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: "title is required" });
+    }
+
+    const doc = await Document.findById(req.params.id);
+    if (!doc) return res.status(404).json({ error: "Document not found" });
+
+    const role = doc.roleFor(req.user.sub);
+    if (role !== "editor") {
+      return res.status(403).json({ error: "Only editors can rename this document" });
+    }
+
+    doc.title = title.trim();
+    await doc.save();
+
+    res.json({ id: doc._id, title: doc.title });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/notifications", async (req, res) => {
+  try {
+    const userId = req.user.sub;
+    const docs = await Document.find({
+      collaborators: { $elemMatch: { user: userId, seen: false } },
+    }).select("title collaborators");
+
+    const notifications = docs.map((doc) => {
+      const collab = doc.collaborators.find((c) => c.user.toString() === userId);
+      return { docId: doc._id, title: doc.title, role: collab.role };
+    });
+
+    res.json(notifications);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/notifications/mark-seen", async (req, res) => {
+  try {
+    const userId = req.user.sub;
+    await Document.updateMany(
+      { collaborators: { $elemMatch: { user: userId, seen: false } } },
+      { $set: { "collaborators.$[elem].seen": true } },
+      { arrayFilters: [{ "elem.user": userId }] }
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {

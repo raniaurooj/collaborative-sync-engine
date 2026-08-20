@@ -4,15 +4,17 @@ import User from "./model/User.model.js"
 const JWT_SECRET = process.env.JWT_SECRET
 const JWT_EXPIRY = process.env.JWT_EXPIRY
 
-export function issueGuestToken(){
-    const userId = "guest-"+ Math.random().toString(36).slice(2,10)
-    const name = "Guest-" + Math.floor(Math.random()*1000)
+export function issueGuestToken() {
+  const userId = "guest-" + Math.random().toString(36).slice(2, 10);
+  const name = "Guest-" + Math.floor(Math.random() * 1000);
 
-    const token = jwt.sign({userId,name},JWT_SECRET,{
-        expiresIn: JWT_EXPIRY
-    })
+  const token = jwt.sign(
+    { sub: userId, name, guest: true },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRY }
+  );
 
-    return {token, userId, name}
+  return { token, userId, name };
 }
 
 export function verifyToken(token){

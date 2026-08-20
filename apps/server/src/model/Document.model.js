@@ -4,6 +4,7 @@ const collaboratorSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     role: { type: String, enum: ["editor", "viewer"], required: true },
+    seen: { type: Boolean, default: false }, // has this user viewed its invite
   },
   { _id: false }
 );

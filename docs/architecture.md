@@ -313,3 +313,12 @@ created per room regardless of how many connections arrive at once.
 - [ ] Idle rooms are never evicted from the in-memory `rooms` Map after
       all clients disconnect — unbounded memory growth over a very long
       server lifetime with many documents, not yet addressed.
+
+
+### Testing gotcha: localStorage is shared across tabs
+Multi-user auth flows can't be tested with two regular tabs of the same
+browser — localStorage is scoped to the origin, not the tab, so logging
+into a second account in one tab silently overwrites the token the
+first tab was using. Verified end-to-end (owner editing, invited viewer
+correctly locked to read-only) using two separate browser contexts
+(regular window + a different browser), not two tabs.
